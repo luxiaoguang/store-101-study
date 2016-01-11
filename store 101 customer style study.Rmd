@@ -1,0 +1,97 @@
+---
+title: "store 101 customer style study"
+author: "Luxiaoguang"
+date: "2016年1月10日"
+output: html_document
+---
+
+## 项目简介
+
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+library(RMySQL)
+library(dplyr)
+library(rCharts)
+library(lubridate)
+library(ggplot2)
+```
+
+## 获取数据
+
+```{r,echo=FALSE,cache=TRUE,results='hide'}
+RTest<-dbConnect(MySQL(),user="devuser2",password="luxiaoguang",db="RTest",
+                 host="dev-platform-db.czec8chdqeuo.rds.cn-north-1.amazonaws.com.cn")
+allTables<-dbListTables(RTest)
+length(allTables)
+allTables[1:5]
+dbListFields(RTest,"bnh_basks")
+dbGetQuery(RTest,"select count(*) from bnh_basks")
+basksData<-dbReadTable(RTest,"bnh_basks")
+dbDisconnect(RTest)
+```
+
+```{r,echo=FALSE}
+head(basksData)
+```
+
+
+## 整理数据
+
+```{r, echo=FALSE}
+##remove 0 bask_spend obs.
+basksDataclean<-filter(basksData,basksData$bask_spend>0 & basksData$bask_quantity>0)
+#remove empty data variables
+basksDataclean<-select(basksDataclean,bask_id:bask_quantity)
+#remove repeat variables
+basksDataclean<-basksDataclean[,c(2,4,6,7,9,10)]
+head(basksDataclean)
+```
+
+
+## 消费者类型分析
+```{r,echo=FALSE}
+data<-basksDataclean[,c(2,4,5)]
+data<-filter(data,!(cust_code==""))
+
+datagroup<-group_by(data,cust_code)
+datasummary<-summarize(datagroup,spend=sum(bask_spend),times=length(cust_code))
+
+custstyle<-as.data.frame(datasummary)
+## special customer
+special<-custstyle[custstyle$times==max(custstyle$times),]
+## remove impossible data
+custstyle<-custstyle[!(custstyle$times==max(custstyle$times)),]
+
+
+onestop<-custstyle[custstyle$spend>=mean(custstyle$spend) & custstyle$times<mean(custstyle$times),]
+fans<-custstyle[custstyle$spend>=mean(custstyle$spend) & custstyle$times>=mean(custstyle$times),]
+few<-custstyle[custstyle$spend<mean(custstyle$spend) & custstyle$times<mean(custstyle$times),]
+everyday<-custstyle[custstyle$spend<mean(custstyle$spend) & custstyle$times>=mean(custstyle$times),]
+
+onestop$label<-"onestop"
+fans$label<-"fans"
+few$label<-"few"
+everyday$label<-"everyday"
+
+custstyle<-rbind(onestop,fans,few,everyday)
+
+g1<-ggplot(custstyle,aes(spend,times))
+p1<-g1 + geom_point(aes(color = label)) + theme(axis.text.x=element_text(size=12,angle=45)) + labs(title = "消费者类型") 
+p1
+
+```
+
+此图我们把所有普通的顾客分为四个区域。  绿色的区域是2年以来消费次数大于平均消费次数，并且消费金额大于平均消费金额的顾客。我们把他们命名为粉丝。    
+玫红色的区域是2年以来消费次数大于平均值，但是消费金额小于平均值的顾客。我们把他们定义为每日购买者。  
+紫色的区域是2年以来消费次数小于平均值，但是消费金额大于平均值的顾客。我们把他们定义为一站式购物者。  
+蓝色的区域是2年以来消费次数小于平均值，消费金额也小于平均值的顾客。我们把他们定义为散装购买者。  
+从上图我们可以看出绿色的点代表了我们的忠实客户，他们有一定的消费力，他们贡献了大部分的销售额。我们应该重点研究他们的消费习惯和偏好，有针对性的进行一些促销优惠活动。  
+
+另外，我们发现了一位特殊的顾客  
+```{r,echo=FALSE}
+special
+```  
+
+他在2年里，一共消费40356次，金额2248654元，经常一天内多次消费。这应该不是一个个人，而是许多没带会员卡，但却要享受优惠的许多人吧。这种特殊的现象应该予以关注。  
+
+
+
