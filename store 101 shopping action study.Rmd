@@ -1,0 +1,116 @@
+---
+title: "store 101 shopping action study"
+author: "Luxiaoguang"
+date: "2016年1月10日"
+output: html_document
+---
+
+## 项目简介
+
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+library(RMySQL)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+## 获取数据
+
+```{r,echo=FALSE,cache=TRUE,results='hide'}
+RTest<-dbConnect(MySQL(),user="devuser2",password="luxiaoguang",db="RTest",
+                 host="dev-platform-db.czec8chdqeuo.rds.cn-north-1.amazonaws.com.cn")
+allTables<-dbListTables(RTest)
+length(allTables)
+allTables[1:5]
+dbListFields(RTest,"bnh_items")
+dbGetQuery(RTest,"select count(*) from bnh_items")
+itemsData<-dbReadTable(RTest,"bnh_items")
+dbDisconnect(RTest)
+```
+
+```{r,echo=FALSE}
+head(itemsData)
+```
+
+
+## 整理数据
+
+```{r, echo=FALSE}
+##remove 0 spend obs.
+itemsDataclean<-filter(itemsData,itemsData$spend>0 & itemsData$quantity>0)
+#remove empty data variables
+itemsDataclean<-select(itemsDataclean,bask_id:original_shop_datetime)
+#remove repeat variables
+itemsDataclean<-itemsDataclean[,c(2,4,6,8,9,10,11)]
+head(itemsDataclean)
+```
+
+## 购物行为分析
+```{r,echo=FALSE}
+actiondata<-itemsDataclean[,c(2,5,7)]
+actiondata$shop_datetime<-substr(actiondata$shop_datetime,12,20)
+##head(actiondata)
+morning<-actiondata[actiondata$shop_datetime>"06:00:00" & actiondata$shop_datetime<="12:00:00",]
+afternoon<-actiondata[actiondata$shop_datetime>"12:00:00" & actiondata$shop_datetime<="18:00:00",]
+evening<-actiondata[actiondata$shop_datetime>"18:00:00" & actiondata$shop_datetime<="24:00:00",]        
+
+product<-group_by(morning,prod_code)
+productM<-summarize(product,qty=sum(quantity))
+productM<-arrange(productM,desc(qty))
+toptenPM<-productM[1:10,]
+toptenPM$label<-"morning"
+
+product<-group_by(afternoon,prod_code)
+productA<-summarize(product,qty=sum(quantity))
+productA<-arrange(productA,desc(qty))
+toptenPA<-productA[1:10,]
+toptenPA$label<-"afternoon"
+
+product<-group_by(evening,prod_code)
+productE<-summarize(product,qty=sum(quantity))
+productE<-arrange(productE,desc(qty))
+toptenPE<-productE[1:10,]
+toptenPE$label<-"evening"
+
+topten<-rbind(toptenPM,toptenPA,toptenPE)
+
+p1<-qplot(prod_code,data = topten,fill=label)+theme(axis.text.x=element_text(size=12,angle=45))+labs(title = "早中晚各档时间销售数量最多的十种商品")
+p1
+a<-group_by(topten,prod_code)
+b<-summarize(a,core=length(label))
+c<-filter(b,core=="3")
+```
+
+通过表1，我们可以看出早上销售最好的商品有  
+`r toptenPM$prod_code`    
+下午销售最好的商品有  
+`r toptenPA$prod_code`  
+晚上销售最好的商品有  
+`r toptenPE$prod_code`   
+而这些产品早中晚都销售得很好  
+`r c$prod_code`    
+
+
+## 产品目录
+```{r,echo=FALSE,results='hide'}
+RTest<-dbConnect(MySQL(),user="devuser2",password="luxiaoguang",db="RTest",
+                 host="dev-platform-db.czec8chdqeuo.rds.cn-north-1.amazonaws.com.cn")
+allTables<-dbListTables(RTest)
+length(allTables)
+allTables[1:5]
+dbListFields(RTest,"bnh_products")
+dbGetQuery(RTest,"select count(*) from bnh_products")
+productsData<-dbReadTable(RTest,"bnh_products")
+dbDisconnect(RTest)
+```
+```{r,echo=FALSE}
+##select topten items.
+productCat<-merge(topten,productsData,all = FALSE)
+productCat<-arrange(productCat[,c(1,2,3,5,13,14,15,16)],label)
+productCat
+```
+
+上表是根据早中晚销售前十的"prod_code"在"bnk_products"数据库中找到的产品描述和目录信息，我们可以根据早中晚销售特性，适当根据时间段相应的有针对性的布货。由于有乱码，分析暂停于此。  
+
+
+

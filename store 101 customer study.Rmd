@@ -1,0 +1,91 @@
+---
+title: "Store 101 customer study"
+author: "Luxiaoguang"
+date: "2015年12月27日"
+output: html_document
+---
+
+## 项目简介
+
+......
+
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+library(RMySQL)
+library(dplyr)
+library(rCharts)
+library(lubridate)
+library(ggplot2)
+```
+
+## 获取数据
+
+```{r,echo=FALSE,cache=TRUE,results='hide'}
+RTest<-dbConnect(MySQL(),user="devuser2",password="luxiaoguang",db="RTest",
+                 host="dev-platform-db.czec8chdqeuo.rds.cn-north-1.amazonaws.com.cn")
+allTables<-dbListTables(RTest)
+length(allTables)
+allTables[1:5]
+dbListFields(RTest,"bnh_basks")
+dbGetQuery(RTest,"select count(*) from bnh_basks")
+basksData<-dbReadTable(RTest,"bnh_basks")
+dbDisconnect(RTest)
+```
+
+```{r,echo=FALSE}
+head(basksData)
+```
+
+
+## 整理数据
+
+```{r, echo=FALSE}
+##remove 0 bask_spend obs.
+basksDataclean<-filter(basksData,basksData$bask_spend>0)
+#remove empty data variables
+basksDataclean<-select(basksDataclean,bask_id:bask_quantity)
+#remove repeat variables
+basksDataclean<-basksDataclean[,c(2,4,6,7,9,10)]
+head(basksDataclean)
+```
+
+
+## 客户忠诚度分析
+```{r, comment = NA, message = F, echo = F}
+customerdata<-basksDataclean
+customerdata<-filter(customerdata,!(cust_code==""))
+customerdata$shop_datetime<-substr(customerdata$shop_datetime,1,7)
+customerdatasplit<-split(customerdata,customerdata$shop_datetime)
+ym<-as.data.frame(table(customerdata$shop_datetime))
+custarrive<-0
+for (i in 1:length(customerdatasplit)) {
+        split<-customerdatasplit[[i]]
+        ##split<-customerdatasplit[[1]]
+        customer<-group_by(split,cust_code)
+        custsummary<-summarize(customer,comsume=sum(bask_spend),quantity=sum(bask_quantity))
+        custarrive[i]<-nrow(custsummary)
+}
+
+cust<-cbind(ym,custarrive)
+cust$averagearrivetimes<-round(cust$Freq/cust$custarrive,2)
+colnames(cust)<-c("date","ttlFreq","ttlCust","freqcust")
+
+g1<-ggplot(cust,aes(date,ttlFreq))
+p1<-g1 + geom_point() + theme(axis.text.x=element_text(size=12,angle=45)) + labs(title = "每月总购买频次") 
+p1
+
+g2<-ggplot(cust,aes(date,ttlCust))
+p2<-g2 + geom_point() + theme(axis.text.x=element_text(size=12,angle=45)) + labs(title = "每月到店顾客数") 
+p2
+
+g3<-ggplot(cust,aes(date,freqcust))
+p3<-g3 + geom_point() + theme(axis.text.x=element_text(size=12,angle=45)) + labs(title = "每月每位顾客平均购买频次") 
+p3
+```
+
+表1，可以看出每月的总购买频次有所降低，但基本稳定。  
+表2，可以看出每月到店的顾客数基本稳定。  
+表3，显示平均每个顾客每月购买频次基本稳定，但略有降低。  
+综上表明顾客的忠诚度基本稳定，但仍有提升的空间。    
+
+
+
